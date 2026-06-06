@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kelola Data — WebGIS Asam Kumbang</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .search-bar { display:flex; gap:8px; margin-bottom:1rem; }
+    .search-bar input { flex:1; }
+    .filter-select { width:auto; min-width:140px; }
+  </style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:36px;height:36px;background:linear-gradient(135deg,#667eea,#764ba2);
+      border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">🗺</div>
+    <div>
+      <div class="logo-main">WebGIS Jalan Rawan</div>
+      <div class="logo-sub">Asam Kumbang · Medan Selayang</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:4px">
+    <nav id="nav-links"></nav>
+    <div id="nav-right" style="display:flex;align-items:center;gap:6px;
+      margin-left:8px;padding-left:8px;border-left:1px solid var(--border)"></div>
+  </div>
+</header>
+
+<div style="overflow-y:auto;height:calc(100vh - 60px);padding:2rem 1.5rem;background:var(--bg)">
+<div class="page-wrap wide">
+  <div class="page-title">🗂 Kelola Data Titik Rawan</div>
+  <div class="page-sub">Edit dan hapus data — hanya Admin</div>
+
+  <div class="search-bar">
+    <input id="search" type="text" placeholder="🔍 Cari nama lokasi..." oninput="filterData()">
+    <select id="filter-kat" class="filter-select" onchange="filterData()">
+      <option value="">Semua Kategori</option>
+      <option value="gelap">🔦 Jalan Gelap</option>
+      <option value="rusak">🚧 Jalan Rusak</option>
+      <option value="rawan">⚠️ Rawan Kriminal</option>
+    </select>
+    <select id="filter-risk" class="filter-select" onchange="filterData()">
+      <option value="">Semua Risiko</option>
+      <option value="Tinggi">🔴 Tinggi</option>
+      <option value="Sedang">🟡 Sedang</option>
+      <option value="Rendah">🟢 Rendah</option>
+    </select>
+  </div>
+
+  <div class="dc">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.875rem">
+      <div class="dc-title" style="margin-bottom:0">
+        Semua Data (<span id="jml">0</span> titik)
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Nama Lokasi</th><th>Kelurahan</th>
+            <th>Kategori</th><th>Risiko</th><th>Waktu</th><th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- MODAL EDIT -->
+<div id="modal-bg" class="modal-bg" style="display:none" onclick="tutupModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">✏️ Edit Data Titik</div>
+    <div class="fg">
+      <label>Nama Lokasi</label>
+      <input id="e-nama" type="text">
+    </div>
+    <div class="fg">
+      <label>Kelurahan</label>
+      <select id="e-kelurahan">
+        <option value="Asam Kumbang">Asam Kumbang</option>
+        <option value="Sei Sikambing C II">Sei Sikambing C II</option>
+        <option value="Tanjung Sari">Tanjung Sari</option>
+        <option value="Sempakata">Sempakata</option>
+        <option value="Beringin">Beringin</option>
+      </select>
+    </div>
+    <div class="two-col">
+      <div class="fg"><label>Latitude</label><input id="e-lat" type="number" step="0.000001"></div>
+      <div class="fg"><label>Longitude</label><input id="e-lng" type="number" step="0.000001"></div>
+    </div>
+    <div class="fg">
+      <label>Kategori</label>
+      <select id="e-kategori">
+        <option value="gelap">Jalan Gelap</option>
+        <option value="rusak">Jalan Rusak</option>
+        <option value="rawan">Rawan Kriminal</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Deskripsi</label>
+      <textarea id="e-deskripsi"></textarea>
+    </div>
+    <div class="fg">
+      <label>Risiko</label>
+      <select id="e-risiko">
+        <option value="Rendah">Rendah</option>
+        <option value="Sedang">Sedang</option>
+        <option value="Tinggi">Tinggi</option>
+      </select>
+    </div>
+    <input type="hidden" id="e-id">
+    <div class="modal-actions">
+      <button class="btn-sec" onclick="tutupModal()">Batal</button>
+      <button class="btn-primary" style="flex:1" onclick="simpanEdit()">Simpan Perubahan</button>
+    </div>
+    <div id="e-msg" class="msg"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script>
+  let allData = [];
+
+  async function loadData() {
+    const { data } = await db.from('titik_rawan').select('*').order('created_at', { ascending: false });
+    if (!data) return;
+    allData = data;
+    renderTable(data);
+  }
+
+  function renderTable(data) {
+    document.getElementById('jml').textContent = data.length;
+    document.getElementById('tbody').innerHTML = data.map((d, i) => `
+      <tr>
+        <td style="color:var(--text2);font-size:11px;font-family:'DM Mono',monospace">${i+1}</td>
+        <td style="font-weight:600">${d.nama}</td>
+        <td style="color:var(--text2)">${d.kelurahan}</td>
+        <td><span class="badge b-${d.kategori}">${d.kategori}</span></td>
+        <td><span class="badge b-${d.risiko.toLowerCase()}">${d.risiko}</span></td>
+        <td style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace">
+          ${new Date(d.created_at).toLocaleDateString('id-ID')}
+        </td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button onclick="bukaEdit(${d.id})"
+              style="background:#EBF8FF;border:1px solid #BEE3F8;border-radius:6px;
+              color:#2B6CB0;font-size:12px;font-weight:600;padding:4px 10px;cursor:pointer">
+              ✏️ Edit
+            </button>
+            <button onclick="hapus(${d.id})" class="btn-danger">🗑 Hapus</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterData() {
+    const q    = document.getElementById('search').value.toLowerCase();
+    const kat  = document.getElementById('filter-kat').value;
+    const risk = document.getElementById('filter-risk').value;
+    renderTable(allData.filter(d =>
+      d.nama.toLowerCase().includes(q) &&
+      (kat===''  || d.kategori===kat) &&
+      (risk==='' || d.risiko===risk)
+    ));
+  }
+
+  function bukaEdit(id) {
+    const d = allData.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('e-id').value        = d.id;
+    document.getElementById('e-nama').value      = d.nama;
+    document.getElementById('e-kelurahan').value = d.kelurahan;
+    document.getElementById('e-lat').value       = d.lat;
+    document.getElementById('e-lng').value       = d.lng;
+    document.getElementById('e-kategori').value  = d.kategori;
+    document.getElementById('e-deskripsi').value = d.deskripsi || '';
+    document.getElementById('e-risiko').value    = d.risiko;
+    document.getElementById('e-msg').textContent = '';
+    document.getElementById('modal-bg').style.display = 'flex';
+  }
+
+  function tutupModal(e) {
+    if (!e || e.target === document.getElementById('modal-bg'))
+      document.getElementById('modal-bg').style.display = 'none';
+  }
+
+  async function simpanEdit() {
+    const id = document.getElementById('e-id').value;
+    const payload = {
+      nama:      document.getElementById('e-nama').value.trim(),
+      kelurahan: document.getElementById('e-kelurahan').value,
+      lat:       parseFloat(document.getElementById('e-lat').value),
+      lng:       parseFloat(document.getElementById('e-lng').value),
+      kategori:  document.getElementById('e-kategori').value,
+      deskripsi: document.getElementById('e-deskripsi').value.trim(),
+      risiko:    document.getElementById('e-risiko').value,
+    };
+    const msg = document.getElementById('e-msg');
+    msg.textContent = 'Menyimpan...'; msg.className = 'msg ok';
+    const { error } = await db.from('titik_rawan').update(payload).eq('id', id);
+    if (error) { msg.textContent = 'Gagal: '+error.message; msg.className='msg err'; return; }
+    tutupModal();
+    toast('Data berhasil diperbarui!');
+    loadData();
+  }
+
+  async function hapus(id) {
+    if (!confirm('Yakin ingin menghapus titik ini? Tidak bisa dibatalkan.')) return;
+    const { error } = await db.from('titik_rawan').delete().eq('id', id);
+    if (error) { toast('Gagal menghapus!', 'err'); return; }
+    toast('Data berhasil dihapus!');
+    loadData();
+  }
+
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+    renderNav(auth.profile);
+    renderHeaderUser(auth.profile);
+    await loadData();
+  }
+  init();
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — WebGIS Asam Kumbang</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+
+    <div class="login-logo">🗺</div>
+    <div class="login-title">WebGIS Jalan Rawan</div>
+    <div class="login-sub">Kel. Asam Kumbang · Kec. Medan Selayang · Kota Medan</div>
+
+    <!-- TAB SWITCH -->
+    <div class="tab-switch">
+      <button class="tab-btn active" id="tab-masuk" onclick="switchTab('masuk')">Masuk</button>
+      <button class="tab-btn" id="tab-daftar" onclick="switchTab('daftar')">Daftar</button>
+    </div>
+
+    <!-- FORM LOGIN -->
+    <div id="form-masuk">
+      <div class="fg">
+        <label>Email</label>
+        <input id="l-email" type="email" placeholder="nama@email.com" autocomplete="email">
+      </div>
+      <div class="fg">
+        <label>Password</label>
+        <input id="l-pass" type="password" placeholder="Password kamu">
+      </div>
+      <button class="btn-primary" onclick="login()">Masuk →</button>
+      <div id="l-msg" class="msg"></div>
+    </div>
+
+    <!-- FORM REGISTER -->
+    <div id="form-daftar" style="display:none">
+      <div class="fg">
+        <label>Nama Lengkap</label>
+        <input id="r-nama" type="text" placeholder="Nama kamu">
+      </div>
+      <div class="fg">
+        <label>Email</label>
+        <input id="r-email" type="email" placeholder="nama@email.com">
+      </div>
+      <div class="fg">
+        <label>Password</label>
+        <input id="r-pass" type="password" placeholder="Minimal 6 karakter">
+      </div>
+      <div class="fg">
+        <label>Konfirmasi Password</label>
+        <input id="r-pass2" type="password" placeholder="Ulangi password">
+      </div>
+      <div style="background:#EBF8FF;border:1px solid #BEE3F8;border-radius:8px;
+        padding:10px 12px;font-size:13px;color:#2B6CB0;margin-bottom:1rem;">
+        ℹ️ Akun baru terdaftar sebagai <strong>User</strong>.
+        Untuk akses Admin hubungi administrator.
+      </div>
+      <button class="btn-primary" onclick="register()">Daftar Akun →</button>
+      <div id="r-msg" class="msg"></div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  db.auth.getSession().then(({ data: { session } }) => {
+    if (session) window.location.href = 'index.html';
+  });
+
+  function switchTab(tab) {
+    const isMasuk = tab === 'masuk';
+    document.getElementById('form-masuk').style.display  = isMasuk ? '' : 'none';
+    document.getElementById('form-daftar').style.display = isMasuk ? 'none' : '';
+    document.getElementById('tab-masuk').classList.toggle('active',  isMasuk);
+    document.getElementById('tab-daftar').classList.toggle('active', !isMasuk);
+  }
+
+  async function login() {
+    const email = document.getElementById('l-email').value.trim();
+    const pass  = document.getElementById('l-pass').value;
+    const msg   = document.getElementById('l-msg');
+    if (!email || !pass) { setMsg(msg, 'Isi email dan password!', 'err'); return; }
+    setMsg(msg, 'Memproses...', 'ok');
+    const { data, error } = await db.auth.signInWithPassword({ email, password: pass });
+    if (error) { setMsg(msg, 'Email atau password salah!', 'err'); return; }
+    const { data: profile } = await db.from('profiles').select('role').eq('id', data.user.id).single();
+    setMsg(msg, `Berhasil masuk sebagai ${profile?.role || 'user'}! Mengalihkan...`, 'ok');
+    setTimeout(() => window.location.href = 'index.html', 1200);
+  }
+
+  async function register() {
+    const nama  = document.getElementById('r-nama').value.trim();
+    const email = document.getElementById('r-email').value.trim();
+    const pass  = document.getElementById('r-pass').value;
+    const pass2 = document.getElementById('r-pass2').value;
+    const msg   = document.getElementById('r-msg');
+    if (!nama || !email || !pass) { setMsg(msg, 'Lengkapi semua field!', 'err'); return; }
+    if (pass !== pass2)           { setMsg(msg, 'Password tidak cocok!', 'err'); return; }
+    if (pass.length < 6)          { setMsg(msg, 'Password minimal 6 karakter!', 'err'); return; }
+    setMsg(msg, 'Mendaftarkan akun...', 'ok');
+    const { data, error } = await db.auth.signUp({
+      email, password: pass, options: { data: { nama } }
+    });
+    if (error) { setMsg(msg, 'Gagal: ' + error.message, 'err'); return; }
+    await db.from('profiles').upsert([{
+      id: data.user.id, email, nama, role: 'user'
+    }]);
+    setMsg(msg, 'Akun berhasil dibuat! Silakan masuk.', 'ok');
+    setTimeout(() => switchTab('masuk'), 1500);
+  }
+
+  function setMsg(el, txt, type) {
+    el.textContent = txt;
+    el.className = 'msg ' + type;
+  }
+</script>
+</body>
+</html>

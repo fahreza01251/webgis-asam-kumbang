@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peta — WebGIS Asam Kumbang</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+    /* Override Leaflet popup untuk tema terang */
+    .leaflet-container { background: #E8ECEF; }
+    .popup-title { font-size:14px; font-weight:700; margin-bottom:5px; color:#1A202C; }
+    .popup-row   { font-size:12px; color:#718096; margin-bottom:3px; }
+    /* Tombol hapus di popup */
+    .popup-del-btn {
+      margin-top:10px; width:100%;
+      background:#FFF5F5; border:1px solid #FEB2B2;
+      border-radius:6px; color:#C53030;
+      font-size:12px; font-weight:600;
+      padding:6px; cursor:pointer;
+      font-family:'Space Grotesk',sans-serif;
+      transition:background .15s;
+    }
+    .popup-del-btn:hover { background:#FED7D7; }
+    /* Kursor crosshair saat mode tambah */
+    .adding-cursor { cursor: crosshair !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:36px;height:36px;background:linear-gradient(135deg,#667eea,#764ba2);
+      border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">
+      🗺
+    </div>
+    <div>
+      <div class="logo-main">WebGIS Jalan Rawan — Asam Kumbang</div>
+      <div class="logo-sub">Kec. Medan Selayang · Kota Medan</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:4px">
+    <nav id="nav-links"></nav>
+    <div id="nav-right" style="display:flex;align-items:center;gap:6px;
+      margin-left:8px;padding-left:8px;border-left:1px solid var(--border)">
+    </div>
+  </div>
+</header>
+
+<div class="main">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-head">
+      <div class="sb-label">📍 Ringkasan Asam Kumbang</div>
+    </div>
+    <div class="sb-body">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-lbl">Total Titik</div>
+          <div class="stat-val" style="color:var(--accent2)" id="s-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Risiko Tinggi</div>
+          <div class="stat-val" style="color:var(--danger)" id="s-tinggi">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Jalan Gelap</div>
+          <div class="stat-val" style="color:#E65100" id="s-gelap">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Jalan Rusak</div>
+          <div class="stat-val" style="color:#F57F17" id="s-rusak">—</div>
+        </div>
+      </div>
+
+      <div class="sec-title" style="margin-top:.25rem">Filter Layer</div>
+      <div style="margin-bottom:1rem">
+        <div class="leg-item on" onclick="toggleLayer('gelap',this)">
+          <div class="leg-dot" style="background:#E65100"></div>Jalan Gelap
+          <span class="leg-cnt" id="lc-gelap">0</span>
+        </div>
+        <div class="leg-item on" onclick="toggleLayer('rusak',this)">
+          <div class="leg-dot" style="background:#F57F17"></div>Jalan Rusak
+          <span class="leg-cnt" id="lc-rusak">0</span>
+        </div>
+        <div class="leg-item on" onclick="toggleLayer('rawan',this)">
+          <div class="leg-dot" style="background:#C62828"></div>Rawan Kriminal
+          <span class="leg-cnt" id="lc-rawan">0</span>
+        </div>
+      </div>
+
+      <div class="sec-title">Data Terbaru</div>
+      <div class="data-list" id="data-list">
+        <div style="color:var(--text2);font-size:13px;padding:8px;text-align:center">
+          ⏳ Memuat data...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div class="map-wrap" id="map-wrap">
+    <div id="map"></div>
+
+    <!-- Banner mode tambah titik -->
+    <div class="add-banner" id="add-banner">
+      📍 Klik lokasi di peta untuk menandai titik rawan
+      <button class="cancel-btn" onclick="cancelAdd()">✕ Batal</button>
+    </div>
+
+    <!-- Tombol kontrol -->
+    <div class="map-ctrl">
+      <button class="mc-btn prim" id="btn-tambah" onclick="startAdd()" style="display:none">
+        + Tambah Titik
+      </button>
+      <button class="mc-btn" onclick="map.locate({setView:true,maxZoom:17})">
+        📍 Lokasi Saya
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script>
+  let userProfile = null;
+  let layers = { gelap:true, rusak:true, rawan:true };
+  let markers = [];
+  let addMode = false;
+
+  // ---- MAP SETUP ----
+  const map = L.map('map', { zoomControl:false }).setView([3.5611, 98.6180], 16);
+
+  // Basemap terang OpenStreetMap
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© OpenStreetMap contributors',
+    maxZoom: 20
+  }).addTo(map);
+
+  L.control.zoom({ position:'bottomright' }).addTo(map);
+
+  // Batas wilayah Asam Kumbang
+  L.polygon([
+    [3.5560,98.6130],[3.5560,98.6230],
+    [3.5660,98.6230],[3.5660,98.6130]
+  ], {
+    color:'#3182CE', weight:2,
+    fillColor:'#3182CE', fillOpacity:0.05,
+    dashArray:'8 5'
+  }).addTo(map).bindTooltip('Kel. Asam Kumbang', {
+    permanent: false, direction: 'center',
+    className: 'leaflet-tooltip'
+  });
+
+  // ---- ICON ----
+  function getColor(k) {
+    return k==='gelap'?'#E65100':k==='rusak'?'#F57F17':'#C62828';
+  }
+  function mkIcon(k, r) {
+    const c = getColor(k);
+    const s = r==='Tinggi'?16:r==='Sedang'?13:10;
+    return L.divIcon({
+      html:`<div style="
+        width:${s}px;height:${s}px;
+        background:${c};border-radius:50%;
+        border:3px solid white;
+        box-shadow:0 2px 6px rgba(0,0,0,0.3);
+      "></div>`,
+      className:'',
+      iconSize:[s,s],
+      iconAnchor:[s/2,s/2]
+    });
+  }
+
+  // ---- LOAD DATA ----
+  async function loadData() {
+    try {
+      const { data, error } = await db
+        .from('titik_rawan')
+        .select('*')
+        .order('created_at', { ascending:false });
+
+      if (error) {
+        document.getElementById('data-list').innerHTML =
+          `<div style="color:var(--danger);font-size:12px;padding:8px;
+            background:#FFF5F5;border-radius:8px;">
+            ⚠️ Error: ${error.message}
+          </div>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        document.getElementById('data-list').innerHTML =
+          `<div style="color:var(--text2);font-size:13px;padding:12px;
+            text-align:center;background:var(--bg3);border-radius:8px;">
+            📭 Belum ada data titik rawan
+          </div>`;
+        ['s-total','s-tinggi','s-gelap','s-rusak'].forEach(id =>
+          document.getElementById(id).textContent = '0'
+        );
+        return;
+      }
+
+      // Stats
+      const g  = data.filter(d=>d.kategori==='gelap').length;
+      const r  = data.filter(d=>d.kategori==='rusak').length;
+      const rw = data.filter(d=>d.kategori==='rawan').length;
+      const t  = data.filter(d=>d.risiko==='Tinggi').length;
+
+      document.getElementById('s-total').textContent  = data.length;
+      document.getElementById('s-tinggi').textContent = t;
+      document.getElementById('s-gelap').textContent  = g;
+      document.getElementById('s-rusak').textContent  = r;
+      document.getElementById('lc-gelap').textContent = g;
+      document.getElementById('lc-rusak').textContent = r;
+      document.getElementById('lc-rawan').textContent = rw;
+
+      // Clear markers
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      // Render markers
+      data.forEach(t => {
+        if (!layers[t.kategori]) return;
+        const m = L.marker([t.lat, t.lng], { icon: mkIcon(t.kategori, t.risiko) });
+
+        const adminBtn = userProfile?.role === 'admin'
+          ? `<button class="popup-del-btn" onclick="hapusTitik(${t.id})">
+              🗑 Hapus Titik Ini
+            </button>`
+          : '';
+
+        m.bindPopup(`
+          <div style="min-width:210px">
+            <div class="popup-title">${t.nama}</div>
+            <div class="popup-row">📍 ${t.kelurahan}</div>
+            <div style="display:flex;gap:5px;margin:8px 0">
+              <span class="badge b-${t.kategori}">${t.kategori}</span>
+              <span class="badge b-${t.risiko.toLowerCase()}">${t.risiko}</span>
+            </div>
+            <div style="font-size:12px;color:#4A5568;line-height:1.6;
+              background:#F7FAFC;padding:8px;border-radius:6px;">
+              ${t.deskripsi || '-'}
+            </div>
+            <div style="font-size:10px;color:#A0AEC0;margin-top:6px;
+              font-family:'DM Mono',monospace;">
+              ${t.lat.toFixed(6)}, ${t.lng.toFixed(6)}
+            </div>
+            ${adminBtn}
+          </div>
+        `);
+        m.addTo(map);
+        markers.push(m);
+      });
+
+      // Sidebar list
+      document.getElementById('data-list').innerHTML =
+        data.slice(0,8).map(d => `
+          <div class="data-item" onclick="map.flyTo([${d.lat},${d.lng}],18)">
+            <div class="data-row">
+              <span class="badge b-${d.kategori}">${d.kategori}</span>
+              <span class="badge b-${d.risiko.toLowerCase()}">${d.risiko}</span>
+            </div>
+            <div class="d-name">${d.nama}</div>
+            <div class="d-loc">${d.kelurahan}</div>
+            <div class="risk-bar">
+              <div class="risk-fill" style="
+                width:${d.risiko==='Tinggi'?100:d.risiko==='Sedang'?60:30}%;
+                background:${d.risiko==='Tinggi'?'#C62828':
+                  d.risiko==='Sedang'?'#D69E2E':'#38A169'}">
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+    } catch(err) {
+      console.error('loadData error:', err);
+    }
+  }
+
+  // ---- HAPUS TITIK ----
+  async function hapusTitik(id) {
+    if (!confirm('Yakin ingin menghapus titik ini?')) return;
+    const { error } = await db.from('titik_rawan').delete().eq('id', id);
+    if (error) { toast('Gagal menghapus!', 'err'); return; }
+    toast('Titik berhasil dihapus!');
+    map.closePopup();
+    loadData();
+  }
+
+  // ---- ADD MODE — KLIK PETA ----
+  function startAdd() {
+    addMode = true;
+    document.getElementById('add-banner').classList.add('show');
+    document.getElementById('map-wrap').classList.add('adding-cursor');
+  }
+  function cancelAdd() {
+    addMode = false;
+    document.getElementById('add-banner').classList.remove('show');
+    document.getElementById('map-wrap').classList.remove('adding-cursor');
+  }
+
+  // Klik peta → simpan koordinat → buka form
+  map.on('click', e => {
+    if (!addMode) return;
+    cancelAdd();
+    sessionStorage.setItem('tmp_lat', e.latlng.lat.toFixed(6));
+    sessionStorage.setItem('tmp_lng', e.latlng.lng.toFixed(6));
+    toast('Koordinat dipilih! Membuka form...');
+    setTimeout(() => window.location.href = 'form.html', 800);
+  });
+
+  // ---- LAYER TOGGLE ----
+  function toggleLayer(type, el) {
+    layers[type] = !layers[type];
+    el.classList.toggle('on');
+    loadData();
+  }
+
+  // ---- INIT ----
+  async function init() {
+    const auth = await requireAuth();
+    if (!auth) return;
+
+    userProfile = auth.profile;
+    renderNav(auth.profile);
+    renderHeaderUser(auth.profile);
+    document.getElementById('btn-tambah').style.display = '';
+
+    setTimeout(() => map.invalidateSize(), 100);
+    await loadData();
+  }
+
+  init();
+</script>
+</body>
+</html>

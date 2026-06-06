@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Input Data — WebGIS Asam Kumbang</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    #map-picker {
+      height: 280px;
+      border-radius: 10px;
+      border: 1.5px solid var(--border);
+      overflow: hidden;
+      cursor: crosshair;
+    }
+    .map-pick-hint {
+      font-size: 12px; color: var(--accent2);
+      margin-top: 6px; font-weight: 600;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .coord-display {
+      background: #EBF8FF; border: 1px solid #BEE3F8;
+      border-radius: 8px; padding: 8px 12px;
+      font-size: 12px; font-family: 'DM Mono', monospace;
+      color: var(--accent2); font-weight: 600;
+      margin-top: 8px; display: none;
+    }
+    .coord-display.show { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:36px;height:36px;background:linear-gradient(135deg,#667eea,#764ba2);
+      border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">🗺</div>
+    <div>
+      <div class="logo-main">WebGIS Jalan Rawan</div>
+      <div class="logo-sub">Asam Kumbang · Medan Selayang</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:4px">
+    <nav id="nav-links"></nav>
+    <div id="nav-right" style="display:flex;align-items:center;gap:6px;
+      margin-left:8px;padding-left:8px;border-left:1px solid var(--border)"></div>
+  </div>
+</header>
+
+<div style="overflow-y:auto;height:calc(100vh - 60px);padding:2rem 1.5rem;background:var(--bg)">
+<div class="page-wrap">
+  <div class="page-title">📝 Input Data Lapangan</div>
+  <div class="page-sub">Tambah titik jalan rawan di Kelurahan Asam Kumbang</div>
+
+  <!-- CARD: PILIH LOKASI DI PETA -->
+  <div class="card">
+    <div class="card-title">📍 Pilih Lokasi di Peta</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:10px">
+      Klik langsung pada peta di bawah untuk menentukan koordinat lokasi yang ingin dilaporkan.
+    </p>
+
+    <!-- MINI MAP PICKER -->
+    <div id="map-picker"></div>
+    <div class="map-pick-hint">
+      👆 Klik pada peta untuk memilih lokasi — atau gunakan GPS di bawah
+    </div>
+    <div class="coord-display" id="coord-display">
+      📍 Koordinat dipilih: <span id="coord-text">—</span>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="gps-btn" onclick="ambilGPS()" style="flex:1">
+        📡 Deteksi GPS Otomatis
+      </button>
+      <button onclick="resetKoordinat()" style="
+        padding:11px 14px;background:var(--bg3);
+        border:1.5px solid var(--border);border-radius:8px;
+        color:var(--text2);font-family:inherit;font-size:13px;
+        cursor:pointer;font-weight:600;">
+        🔄 Reset
+      </button>
+    </div>
+
+    <div class="two-col" style="margin-top:10px">
+      <div>
+        <label>Latitude</label>
+        <input id="f-lat" type="number" placeholder="3.5611" step="0.000001" readonly
+          style="background:#F7FAFC;cursor:not-allowed">
+      </div>
+      <div>
+        <label>Longitude</label>
+        <input id="f-lng" type="number" placeholder="98.6180" step="0.000001" readonly
+          style="background:#F7FAFC;cursor:not-allowed">
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD: INFORMASI LOKASI -->
+  <div class="card">
+    <div class="card-title">🏠 Informasi Lokasi</div>
+    <div class="fg">
+      <label>Nama Jalan / Lokasi <span style="color:var(--danger)">*</span></label>
+      <input id="f-nama" type="text" placeholder="Contoh: Jl. Bunga Asoka Gg. 3">
+    </div>
+    <div class="fg">
+      <label>Gang / Blok (opsional)</label>
+      <input id="f-gang" type="text" placeholder="Contoh: Gang Melati, Blok B">
+    </div>
+    <div class="fg" style="margin-bottom:0">
+      <label>Kelurahan <span style="color:var(--danger)">*</span></label>
+      <select id="f-kelurahan">
+        <option value="Asam Kumbang">Asam Kumbang</option>
+        <option value="Sei Sikambing C II">Sei Sikambing C II</option>
+        <option value="Tanjung Sari">Tanjung Sari</option>
+        <option value="Sempakata">Sempakata</option>
+        <option value="Beringin">Beringin</option>
+        <option value="Padang Bulan Selayang I">Padang Bulan Selayang I</option>
+        <option value="Padang Bulan Selayang II">Padang Bulan Selayang II</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- CARD: DETAIL MASALAH -->
+  <div class="card">
+    <div class="card-title">⚠️ Detail Masalah</div>
+    <div class="fg">
+      <label>Kategori <span style="color:var(--danger)">*</span></label>
+      <select id="f-kategori">
+        <option value="">-- Pilih Kategori --</option>
+        <option value="gelap">🔦 Jalan Gelap (Minim Penerangan)</option>
+        <option value="rusak">🚧 Jalan Rusak / Berlubang</option>
+        <option value="rawan">⚠️ Rawan Kriminalitas / Begal</option>
+      </select>
+    </div>
+    <div class="fg" style="margin-bottom:0">
+      <label>Deskripsi Kondisi</label>
+      <textarea id="f-deskripsi"
+        placeholder="Jelaskan kondisi, contoh: lampu mati 3 bulan, sering sepi malam hari, ada riwayat kejahatan..."></textarea>
+    </div>
+  </div>
+
+  <!-- CARD: TINGKAT RISIKO -->
+  <div class="card">
+    <div class="card-title">🎯 Tingkat Risiko <span style="color:var(--danger)">*</span></div>
+    <div class="risk-sel" style="margin-bottom:1rem">
+      <div class="ro" onclick="pilihRisiko(this,'Rendah')">
+        <div style="font-size:20px;margin-bottom:4px">🟢</div>
+        <div>Rendah</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Masalah ringan</div>
+      </div>
+      <div class="ro" onclick="pilihRisiko(this,'Sedang')">
+        <div style="font-size:20px;margin-bottom:4px">🟡</div>
+        <div>Sedang</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Perlu perhatian</div>
+      </div>
+      <div class="ro" onclick="pilihRisiko(this,'Tinggi')">
+        <div style="font-size:20px;margin-bottom:4px">🔴</div>
+        <div>Tinggi</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Segera ditangani</div>
+      </div>
+    </div>
+    <input type="hidden" id="f-risiko">
+  </div>
+
+  <!-- INFO PELAPOR -->
+  <div class="card" style="background:linear-gradient(135deg,#EBF8FF,#E9D8FD)">
+    <div class="card-title">👤 Info Pelapor</div>
+    <div style="font-size:13px;color:var(--text)">
+      Dilaporkan oleh: <strong id="nama-pelapor">—</strong>
+      <span style="font-size:11px;color:var(--text2);display:block;margin-top:3px;font-family:'DM Mono',monospace" id="waktu-lapor"></span>
+    </div>
+  </div>
+
+  <button class="btn-primary" onclick="simpan()">💾 Simpan ke Database →</button>
+  <div id="pesan" class="msg"></div>
+  <div style="height:2rem"></div>
+</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script>
+  let userProfile = null;
+  let pickerMarker = null;
+
+  // ---- MINI MAP PICKER ----
+  const picker = L.map('map-picker', { zoomControl: true })
+    .setView([3.5611, 98.6180], 15);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 20
+  }).addTo(picker);
+
+  // Batas wilayah Asam Kumbang di mini map
+  L.polygon([
+    [3.5560,98.6130],[3.5560,98.6230],
+    [3.5660,98.6230],[3.5660,98.6130]
+  ], {
+    color:'#3182CE', weight:2,
+    fillColor:'#3182CE', fillOpacity:0.05,
+    dashArray:'8 5'
+  }).addTo(picker);
+
+  // Klik peta picker → set koordinat
+  picker.on('click', function(e) {
+    const lat = e.latlng.lat.toFixed(6);
+    const lng = e.latlng.lng.toFixed(6);
+    setKoordinat(lat, lng);
+  });
+
+  function setKoordinat(lat, lng) {
+    document.getElementById('f-lat').value = lat;
+    document.getElementById('f-lng').value = lng;
+
+    // Update tampilan koordinat
+    document.getElementById('coord-text').textContent = `${lat}, ${lng}`;
+    document.getElementById('coord-display').classList.add('show');
+
+    // Hapus marker lama, tambah baru
+    if (pickerMarker) picker.removeLayer(pickerMarker);
+    pickerMarker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        html: `<div style="
+          width:20px;height:20px;
+          background:#E53E3E;border-radius:50%;
+          border:3px solid white;
+          box-shadow:0 2px 8px rgba(0,0,0,0.4);
+        "></div>`,
+        className: '',
+        iconSize: [20,20],
+        iconAnchor: [10,10]
+      })
+    }).addTo(picker);
+
+    picker.setView([lat, lng], 17);
+    toast('Koordinat dipilih dari peta!');
+  }
+
+  function resetKoordinat() {
+    document.getElementById('f-lat').value = '';
+    document.getElementById('f-lng').value = '';
+    document.getElementById('coord-display').classList.remove('show');
+    if (pickerMarker) { picker.removeLayer(pickerMarker); pickerMarker = null; }
+    toast('Koordinat direset');
+  }
+
+  // ---- GPS OTOMATIS ----
+  function ambilGPS() {
+    if (!navigator.geolocation) { toast('GPS tidak tersedia', 'err'); return; }
+    toast('Mendeteksi lokasi GPS...');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setKoordinat(
+          pos.coords.latitude.toFixed(6),
+          pos.coords.longitude.toFixed(6)
+        );
+        toast('GPS berhasil dideteksi!');
+      },
+      () => toast('Izinkan akses GPS di browser kamu', 'err')
+    );
+  }
+
+  // ---- AMBIL KOORDINAT DARI KLIK PETA UTAMA ----
+  window.addEventListener('load', () => {
+    const lat = sessionStorage.getItem('tmp_lat');
+    const lng = sessionStorage.getItem('tmp_lng');
+    if (lat && lng) {
+      setKoordinat(lat, lng);
+      sessionStorage.removeItem('tmp_lat');
+      sessionStorage.removeItem('tmp_lng');
+    }
+    document.getElementById('waktu-lapor').textContent =
+      'Waktu: ' + new Date().toLocaleString('id-ID');
+
+    // Paksa picker hitung ulang ukuran
+    setTimeout(() => picker.invalidateSize(), 200);
+  });
+
+  // ---- PILIH RISIKO ----
+  function pilihRisiko(el, val) {
+    document.querySelectorAll('.ro').forEach(o => o.className = 'ro');
+    el.classList.add('sel-' + val.toLowerCase());
+    document.getElementById('f-risiko').value = val;
+  }
+
+  // ---- SIMPAN DATA ----
+  async function simpan() {
+    const nama      = document.getElementById('f-nama').value.trim();
+    const gang      = document.getElementById('f-gang').value.trim();
+    const kelurahan = document.getElementById('f-kelurahan').value;
+    const lat       = parseFloat(document.getElementById('f-lat').value);
+    const lng       = parseFloat(document.getElementById('f-lng').value);
+    const kategori  = document.getElementById('f-kategori').value;
+    const deskripsi = document.getElementById('f-deskripsi').value.trim();
+    const risiko    = document.getElementById('f-risiko').value;
+    const pesan     = document.getElementById('pesan');
+
+    if (!nama) { setMsg(pesan, '⚠️ Nama lokasi wajib diisi!', 'err'); return; }
+    if (!lat || !lng) { setMsg(pesan, '⚠️ Pilih lokasi di peta atau gunakan GPS!', 'err'); return; }
+    if (!kategori) { setMsg(pesan, '⚠️ Pilih kategori masalah!', 'err'); return; }
+    if (!risiko)   { setMsg(pesan, '⚠️ Pilih tingkat risiko!', 'err'); return; }
+
+    setMsg(pesan, '💾 Menyimpan data...', 'ok');
+
+    const namaLengkap = gang ? `${nama} (${gang})` : nama;
+
+    const { error } = await db.from('titik_rawan').insert([{
+      nama: namaLengkap, kelurahan, lat, lng,
+      kategori, deskripsi: deskripsi || '-', risiko,
+      dilaporkan_oleh: userProfile?.id || null,
+    }]);
+
+    if (error) { setMsg(pesan, '❌ Gagal: ' + error.message, 'err'); return; }
+
+    setMsg(pesan, '✅ Data berhasil disimpan! Kembali ke peta...', 'ok');
+    setTimeout(() => window.location.href = 'index.html', 1500);
+  }
+
+  function setMsg(el, txt, type) {
+    el.textContent = txt;
+    el.className   = 'msg ' + type;
+  }
+
+  // ---- INIT ----
+  async function init() {
+    const auth = await requireAuth();
+    if (!auth) return;
+    userProfile = auth.profile;
+    renderNav(auth.profile);
+    renderHeaderUser(auth.profile);
+    document.getElementById('nama-pelapor').textContent =
+      `${auth.profile.nama || auth.profile.email} (${auth.profile.role})`;
+  }
+
+  init();
+</script>
+</body>
+</html>

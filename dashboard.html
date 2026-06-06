@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — WebGIS Asam Kumbang</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:36px;height:36px;background:linear-gradient(135deg,#667eea,#764ba2);
+      border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">🗺</div>
+    <div>
+      <div class="logo-main">WebGIS Jalan Rawan</div>
+      <div class="logo-sub">Asam Kumbang · Medan Selayang</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:4px">
+    <nav id="nav-links"></nav>
+    <div id="nav-right" style="display:flex;align-items:center;gap:6px;
+      margin-left:8px;padding-left:8px;border-left:1px solid var(--border)"></div>
+  </div>
+</header>
+
+<div style="overflow-y:auto;height:calc(100vh - 60px);padding:2rem 1.5rem;background:var(--bg)">
+<div class="page-wrap wide">
+  <div class="page-title">📊 Dashboard Admin</div>
+  <div class="page-sub">Kel. Asam Kumbang, Kec. Medan Selayang, Kota Medan</div>
+
+  <div class="dash-stats">
+    <div class="ds" style="border-top:4px solid #3182CE">
+      <div class="ds-lbl">TOTAL TITIK</div>
+      <div class="ds-val" style="color:#3182CE" id="d-total">—</div>
+      <div class="ds-note">titik terdata</div>
+    </div>
+    <div class="ds" style="border-top:4px solid #E65100">
+      <div class="ds-lbl">JALAN GELAP</div>
+      <div class="ds-val" style="color:#E65100" id="d-gelap">—</div>
+      <div class="ds-note">minim penerangan</div>
+    </div>
+    <div class="ds" style="border-top:4px solid #F57F17">
+      <div class="ds-lbl">JALAN RUSAK</div>
+      <div class="ds-val" style="color:#F57F17" id="d-rusak">—</div>
+      <div class="ds-note">infrastruktur buruk</div>
+    </div>
+    <div class="ds" style="border-top:4px solid #C62828">
+      <div class="ds-lbl">RISIKO TINGGI</div>
+      <div class="ds-val" style="color:#C62828" id="d-tinggi">—</div>
+      <div class="ds-note">perlu segera ditangani</div>
+    </div>
+  </div>
+
+  <div class="dash-grid">
+    <div class="dc">
+      <div class="dc-title">📊 Distribusi Kategori</div>
+      <div id="ch-kat"></div>
+    </div>
+    <div class="dc">
+      <div class="dc-title">🎯 Distribusi Risiko</div>
+      <div id="ch-risk"></div>
+    </div>
+  </div>
+
+  <div class="dc" style="margin-bottom:1.25rem">
+    <div class="dc-title">🕐 Aktivitas Terbaru (10 Data)</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Nama Lokasi</th><th>Kelurahan</th>
+            <th>Kategori</th><th>Risiko</th><th>Waktu Input</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-recent"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="dc">
+    <div class="dc-title">📍 Rekap Per Kelurahan</div>
+    <div id="rekap-kel"></div>
+  </div>
+</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script>
+  async function loadDashboard() {
+    const { data } = await db.from('titik_rawan').select('*').order('created_at', { ascending: false });
+    if (!data) return;
+
+    const g = data.filter(d=>d.kategori==='gelap').length;
+    const r = data.filter(d=>d.kategori==='rusak').length;
+    const rw= data.filter(d=>d.kategori==='rawan').length;
+    const t = data.filter(d=>d.risiko==='Tinggi').length;
+    const s = data.filter(d=>d.risiko==='Sedang').length;
+    const rd= data.filter(d=>d.risiko==='Rendah').length;
+
+    document.getElementById('d-total').textContent  = data.length;
+    document.getElementById('d-gelap').textContent  = g;
+    document.getElementById('d-rusak').textContent  = r;
+    document.getElementById('d-tinggi').textContent = t;
+
+    const mxK = Math.max(g,r,rw)||1;
+    document.getElementById('ch-kat').innerHTML = `
+      <div class="cb"><div class="cb-lbl"><span>🔦 Jalan Gelap</span><span>${g}</span></div><div class="cb-track"><div class="cb-fill" style="width:${g/mxK*100}%;background:#E65100"></div></div></div>
+      <div class="cb"><div class="cb-lbl"><span>🚧 Jalan Rusak</span><span>${r}</span></div><div class="cb-track"><div class="cb-fill" style="width:${r/mxK*100}%;background:#F57F17"></div></div></div>
+      <div class="cb"><div class="cb-lbl"><span>⚠️ Rawan Kriminal</span><span>${rw}</span></div><div class="cb-track"><div class="cb-fill" style="width:${rw/mxK*100}%;background:#C62828"></div></div></div>
+    `;
+
+    const mxR = Math.max(t,s,rd)||1;
+    document.getElementById('ch-risk').innerHTML = `
+      <div class="cb"><div class="cb-lbl"><span>🔴 Risiko Tinggi</span><span>${t}</span></div><div class="cb-track"><div class="cb-fill" style="width:${t/mxR*100}%;background:#C62828"></div></div></div>
+      <div class="cb"><div class="cb-lbl"><span>🟡 Risiko Sedang</span><span>${s}</span></div><div class="cb-track"><div class="cb-fill" style="width:${s/mxR*100}%;background:#D69E2E"></div></div></div>
+      <div class="cb"><div class="cb-lbl"><span>🟢 Risiko Rendah</span><span>${rd}</span></div><div class="cb-track"><div class="cb-fill" style="width:${rd/mxR*100}%;background:#38A169"></div></div></div>
+    `;
+
+    document.getElementById('tbody-recent').innerHTML = data.slice(0,10).map((d,i) => `
+      <tr>
+        <td style="color:var(--text2);font-family:'DM Mono',monospace;font-size:11px">${i+1}</td>
+        <td style="font-weight:600">${d.nama}</td>
+        <td style="color:var(--text2)">${d.kelurahan}</td>
+        <td><span class="badge b-${d.kategori}">${d.kategori}</span></td>
+        <td><span class="badge b-${d.risiko.toLowerCase()}">${d.risiko}</span></td>
+        <td style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace">
+          ${new Date(d.created_at).toLocaleString('id-ID')}
+        </td>
+      </tr>
+    `).join('');
+
+    const byKel = {};
+    data.forEach(d => { byKel[d.kelurahan] = (byKel[d.kelurahan]||0)+1; });
+    const maxKel = Math.max(...Object.values(byKel))||1;
+    document.getElementById('rekap-kel').innerHTML =
+      Object.entries(byKel).sort((a,b)=>b[1]-a[1]).map(([kel,cnt])=>`
+        <div class="cb">
+          <div class="cb-lbl"><span>${kel}</span><span>${cnt} titik</span></div>
+          <div class="cb-track"><div class="cb-fill" style="width:${cnt/maxKel*100}%;background:#3182CE"></div></div>
+        </div>
+      `).join('');
+  }
+
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+    renderNav(auth.profile);
+    renderHeaderUser(auth.profile);
+    await loadDashboard();
+  }
+  init();
+</script>
+</body>
+</html>
